@@ -190,5 +190,5 @@ master@k8s-master: ~$ kubectl get nodes
 
 Next, Installing a Pod network add-on
 ```bash
-master@k8s-master: ~$ kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+master@k8s-master: ~$ kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s-1.11.yaml
 ```

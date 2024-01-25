@@ -13,6 +13,7 @@ This repository is a guide on how to build a Kubernetes cluster using Oracle vir
 3. [Docker install](#docker_install)
 4. [Kubernetes install](#k8s_install)
 5. [Control-plane configuration](#control_plane)
+6. [ERROR FIX](#error_fix)
 
 <a name='vm_spec'></a>
 
@@ -188,7 +189,42 @@ Verify that it is operating correctly.
 master@k8s-master: ~$ kubectl get nodes
 ```
 
-Next, Installing a Pod network add-on
+Next, Installing a Pod network add-on.
+
 ```bash
 master@k8s-master: ~$ kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s-1.11.yaml
 ```
+
+And the next step is to join the nodes.
+
+From now on, commands are typed to worker nodes [`k8s-node1`,`k8s-node2`].
+
+```bash
+master@k8s-node1: ~$ kubeadm join [YOUR TOKEN]
+
+master@k8s-node2: ~$ kubeadm join [YOUR TOKEN]
+```
+
+Check your cluster!
+
+```bash
+master@k8s-master: ~$ kubectl get nodes
+```
+
+If all nodes are output and ready, it is a success!
+
+<a name='vm_spec'></a>
+
+## 6. ERROR FIX
+
+You must perform this command if your Kubernetes API server is unstable.
+
+![Static Badge](https://img.shields.io/badge/solution--%230?style=social)
+```bash
+$ containerd config default | tee /etc/containerd/config.toml
+$ sed -i 's/SystemdCgroup = False/SystemdCgroup = true/g' /etc/containerd/config.toml
+$ service containerd restart
+$ service kubelet restart
+```
+I believe this issue is caused by Docker and Containerd crashing while running.
+

@@ -122,8 +122,53 @@ Once docker installation is complete, check the version by entering the command.
 If the version appears correctly, installation is complete.
 
 ```bash
+$ curl -fsSL https://get.docker.com -o get-docker.sh
+$ sudo sh get-docker.sh
+$ sudo systemctl restart docker
+$ sudo systemctl enable docker
+```
+
+```bash
 $ docker --version
 ```
+
+Because Kubernetes ended native support for the Docker container runtime after version 1.24, you will need to additionally install cri-docker to connect Docker and Kubernetes.
+
+```bash
+$ git clone https://github.com/Mirantis/cri-dockerd.git
+$ wget https://storage.googleapis.com/golang/getgo/installer_linux
+$ chmod +x ./installer_linux
+./installer_linux
+$ source ~/.bash_profile
+$ cd cri-dockerd
+$ mkdir bin
+$ go build -o bin/cri-dockerd
+$ mkdir -p /usr/local/bin
+$ install -o root -g root -m 0755 bin/cri-dockerd /usr/local/bin/cri-dockerd
+$ cp -a packaging/systemd/* /etc/systemd/system
+$ sed -i -e 's,/usr/bin/cri-dockerd,/usr/local/bin/cri-dockerd,' /etc/systemd/system/cri-docker.service
+
+$ sudo systemctl daemon-reload
+$ sudo ystemctl enable cri-docker.service
+$ sudo systemctl enable --now cri-docker.socket
+$ sudo systemctl restart docker && sudo systemctl restart cri-docker
+$ sudo systemctl status cri-docker.socket --no-pager
+```
+
+Docker Cgroup Change.
+```bash
+cat <<EOF | sudo tee /etc/docker/daemon.json
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+```
+
 
 <a name='k8s_install'></a>
 
@@ -136,6 +181,7 @@ sudo swapoff -a
 sudo sed -i '/ swap / s/^\(.*/)$/#1/g' /etc/fstab
 ```
 
+Kernel Forwarding, kube-proxy settings.
 ```bash
 cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
 br_netfilter

@@ -10,10 +10,10 @@ This repository is a guide on how to build a Kubernetes cluster using Oracle vir
 
 1. [VM Spec](#vm_spec)
 2. [VM Setting](#vm_setting)
-3. [Docker install](#docker_install)
-4. [Kubernetes install](#k8s_install)
-5. [Control-plane configuration](#control_plane)
-6. [ERROR FIX](#error_fix)
+3. [Kubernetes install](#k8s_install)
+4. [Control-plane configuration](#control_plane)
+5. [ERROR FIX](#error_fix)
+6. [++Docker install](#docker_install)
 
 <a name='vm_spec'></a>
 
@@ -29,14 +29,17 @@ master node, Worker node Spec
 The virtual IPs and ports we will use when building a cluster are as follows.
 
 * master 
-    * IP : 192.168.200.100 
+    * IP : 192.168.1.10 
     * Port : 1000
 * worker node 1 
-    * IP : 192.168.200.101
+    * IP : 192.168.1.11
     * Port : 1001
 * worker node 2 
-    * IP : 192.168.200.102
+    * IP : 192.168.1.12
     * Port : 1002
+* worker node 3
+    * IP : 192.168.1.13
+    * Port : 1003
 
 <a name='vm_setting'></a>
 
@@ -55,7 +58,7 @@ network:
     ethernets:
         enp0s3:
             addresses:
-                - 192.168.200.100/24
+                - 192.168.1.10/24
             routes:
                 - to: default
                   via: 192.168.200.1
@@ -82,9 +85,10 @@ sudo vi /etc/hosts
 
 ```vim
 127.0.0.1 localhost
-192.168.200.100 k8s-master
-192.168.200.101 k8s-node1
-192.168.200.102 k8s-node2
+192.168.1.10 k8s-master
+192.168.1.11 k8s-node1
+192.168.1.12 k8s-node2
+192.168.1.12 k8s-node3
 ```
 
 Then, shut down the virtual machine and create two copies of the master virtual machine.
@@ -108,11 +112,126 @@ master@k8s-node1: ~$ sudo hostname apply
 master@k8s-node1: ~$ sudo reboot
 ```
 
-Applies to node2 as well.
+Applies to node2, node3 as well.
+
+<a name='k8s_install'></a>
+
+## 3. Kubernetes Install
+
+I will do all settings with root privileges.
+
+You must terminate swap before installing Kubernetes.
+
+
+```bash
+$ swapoff -a
+$ sed -i '/ swap / s/^\(.*/)$/#1/g' /etc/fstab
+```
+
+Kernel Forwarding, kube-proxy settings.
+```bash
+$ tee /etc/modules-load.d/containerd.conf <<EOF
+overlay
+br_netfilter
+EOF
+
+$ modprobe overlay
+$ modprobe br_netfilter
+```
+
+Set kernel parameters
+```bash
+$ tee /etc/sysctl.d/kubernetes.conf <<EOF
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1
+EOF 
+```
+
+Now let's install Kubernetes.
+
+Detailed information regarding installation is on the [kubernetes site](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/).
+
+You've completed the installation, start the kubelet
+
+```bash
+$ sysctl --system
+```
+
+<a name='control_plane'></a>
+
+## 4. Control-plane configuration
+
+You must typing `k8s-master`VM.
+```bash
+root@k8s-master: ~$ kubeadm init
+```
+
+When the kubeadm command is finished, a token appears at the end. Copy this and save it.
+
+I will save this token in token.txt on the master vm.
+
+```bash
+root@k8s-master: ~$ cat > token.txt
+> kubeadm join 192.168.1.10 ...
+```
+Next, set user permissions to use the cluster.
+```bash
+root@k8s-master: ~$ sudo mkdir -p $HOME/.kube
+root@k8s-master: ~$ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+root@k8s-master: ~$ sudo chown $(id -u):$(id -g) $HOME/.kube/config
+```
+
+Verify that it is operating correctly.
+
+```bash
+root@k8s-master: ~$ kubectl get nodes
+```
+
+Next, Installing a Pod network add-on.
+
+```bash
+root@k8s-master: ~$ kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml
+```
+
+And the next step is to join the nodes.
+
+From now on, commands are typed to worker nodes [`k8s-node1`,`k8s-node2`,`k8s-node3`].
+
+```bash
+root@k8s-node1: ~$ kubeadm join [YOUR TOKEN]
+
+root@k8s-node2: ~$ kubeadm join [YOUR TOKEN]
+
+root@k8s-node3: ~$ kubeadm join [YOUR TOKEN]
+```
+
+Check your cluster!
+
+```bash
+root@k8s-master: ~$ kubectl get nodes
+```
+
+If all nodes are output and ready, it is a success!
+
+<a name='vm_spec'></a>
+
+## 5. ERROR FIX
+
+You must perform this command if your Kubernetes API server is unstable.
+
+![Static Badge](https://img.shields.io/badge/solution--%230?style=social)
+```bash
+$ containerd config default | tee /etc/containerd/config.toml
+$ sed -i 's/SystemdCgroup = False/SystemdCgroup = true/g' /etc/containerd/config.toml
+$ service containerd restart
+$ service kubelet restart
+```
+I believe this issue is caused by Docker and Containerd crashing while running.
 
 <a name='docker_install'></a>
 
-## 3. Docker Install
+## 6. ++Docker Install
 
 To use a Kubernetes cluster, Docker must be installed on all virtual machines.
 
@@ -168,109 +287,3 @@ cat <<EOF | sudo tee /etc/docker/daemon.json
 }
 EOF
 ```
-
-
-<a name='k8s_install'></a>
-
-## 4. Kubernetes Install
-
-You must terminate swap before installing Kubernetes.
-
-```bash
-sudo swapoff -a
-sudo sed -i '/ swap / s/^\(.*/)$/#1/g' /etc/fstab
-```
-
-Kernel Forwarding, kube-proxy settings.
-```bash
-cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
-br_netfilter
-EOF
-
-cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
-net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables = 1
-EOF
-```
-
-Now let's install Kubernetes.
-
-Detailed information regarding installation is on the [kubernetes site](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/).
-
-You've completed the installation, start the kubelet
-
-```bash
-[All VM]
-sudo systemctl start kubelet
-sudo systemctl enable kubelet
-```
-
-<a name='control_plane'></a>
-
-## 5. Control-plane configuration
-
-You must typing `k8s-master`VM.
-```bash
-master@k8s-master: ~$ kubeadm init
-```
-
-When the kubeadm command is finished, a token appears at the end. Copy this and save it.
-
-I will save this token in token.txt on the master vm.
-
-```bash
-master@k8s-master: ~$ cat > token.txt
-> kubeadm join 192.168.200.100 ...
-```
-Next, set user permissions to use the cluster.
-```bash
-master@k8s-master: ~$ sudo mkdir -p $HOME/.kube
-master@k8s-master: ~$ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-master@k8s-master: ~$ sudo chown $(id -u):$(id -g) $HOME/.kube/config
-```
-
-Verify that it is operating correctly.
-
-```bash
-master@k8s-master: ~$ kubectl get nodes
-```
-
-Next, Installing a Pod network add-on.
-
-```bash
-master@k8s-master: ~$ kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s-1.11.yaml
-```
-
-And the next step is to join the nodes.
-
-From now on, commands are typed to worker nodes [`k8s-node1`,`k8s-node2`].
-
-```bash
-master@k8s-node1: ~$ kubeadm join [YOUR TOKEN]
-
-master@k8s-node2: ~$ kubeadm join [YOUR TOKEN]
-```
-
-Check your cluster!
-
-```bash
-master@k8s-master: ~$ kubectl get nodes
-```
-
-If all nodes are output and ready, it is a success!
-
-<a name='vm_spec'></a>
-
-## 6. ERROR FIX
-
-You must perform this command if your Kubernetes API server is unstable.
-
-![Static Badge](https://img.shields.io/badge/solution--%230?style=social)
-```bash
-$ containerd config default | tee /etc/containerd/config.toml
-$ sed -i 's/SystemdCgroup = False/SystemdCgroup = true/g' /etc/containerd/config.toml
-$ service containerd restart
-$ service kubelet restart
-```
-I believe this issue is caused by Docker and Containerd crashing while running.
-

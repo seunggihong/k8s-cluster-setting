@@ -49,7 +49,7 @@ First, we will create a master virtual machine and name it ‘k8s-master’. The
 Second, modify the `/etc/netplan/00-installer-config.yaml` file as follows.
 
 ```bash
-sudo vi /etc/netplan/00installer-config.yaml
+sudo vi /etc/netplan/00-installer-config.yaml
 ```
 
 ```yaml
@@ -61,7 +61,7 @@ network:
                 - 192.168.1.10/24
             routes:
                 - to: default
-                  via: 192.168.200.1
+                  via: 192.168.1.1
             nameservers:
                 addresses:
                     - 8.8.8.8

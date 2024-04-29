@@ -218,9 +218,8 @@ If all nodes are output and ready, it is a success!
 
 ## 5. ERROR FIX
 
-You must perform this command if your Kubernetes API server is unstable.
+### 5-1. You must perform this command if your Kubernetes API server is unstable.
 
-![Static Badge](https://img.shields.io/badge/solution--%230?style=social)
 ```bash
 $ containerd config default | tee /etc/containerd/config.toml
 $ sed -i 's/SystemdCgroup = False/SystemdCgroup = true/g' /etc/containerd/config.toml
@@ -228,6 +227,12 @@ $ service containerd restart
 $ service kubelet restart
 ```
 I believe this issue is caused by Docker and Containerd crashing while running.
+
+### 5-2. If node is not ready state.
+```bash
+$ systemctl restart kubelet
+$ systemctl restart containerd
+```
 
 <a name='docker_install'></a>
 

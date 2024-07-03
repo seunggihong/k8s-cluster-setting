@@ -118,101 +118,66 @@ Applies to node2, node3 as well.
 
 ## 3. Kubernetes Install
 
-I will do all settings with root privileges.
+CRI-O instll
 
-You must terminate swap before installing Kubernetes.
-
-
-```bash
-$ swapoff -a
-$ sed -i '/ swap / s/^\(.*/)$/#1/g' /etc/fstab
-```
-
-Kernel Forwarding, kube-proxy settings.
-```bash
-$ tee /etc/modules-load.d/containerd.conf <<EOF
+cat <<EOF | sudo tee /etc/modules-load.d/crio.conf
 overlay
 br_netfilter
 EOF
 
-$ modprobe overlay
-$ modprobe br_netfilter
-```
+sudo modprobe overlay
+sudo modprobe br_netfilter
 
-Set kernel parameters
-```bash
-$ tee /etc/sysctl.d/kubernetes.conf <<EOF
+cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward                 = 1
 net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables = 1
-net.ipv4.ip_forward = 1
-EOF 
-```
+EOF
 
-Now let's install Kubernetes.
+sudo sysctl --system
 
-Detailed information regarding installation is on the [kubernetes site](https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/).
+sudo -i
 
-You've completed the installation, start the kubelet
+export OS=xUbuntu_20.04 # OS 버전
+export VERSION=1.19     # cri-o 버전
 
-```bash
-$ sysctl --system
-```
+echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
 
-<a name='control_plane'></a>
+curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | apt-key add -
+curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | apt-key add -
 
-## 4. Control-plane configuration
+sudo apt-get update
 
-You must typing `k8s-master`VM.
-```bash
-root@k8s-master: ~$ kubeadm init
-```
+sudo apt-get -y install cri-o cri-o-runc cri-tools
 
-When the kubeadm command is finished, a token appears at the end. Copy this and save it.
+sudo systemctl daemon-reload
+sudo systemctl enable crio --now
 
-I will save this token in token.txt on the master vm.
 
-```bash
-root@k8s-master: ~$ cat > token.txt
-> kubeadm join 192.168.1.10 ...
-```
-Next, set user permissions to use the cluster.
-```bash
-root@k8s-master: ~$ sudo mkdir -p $HOME/.kube
-root@k8s-master: ~$ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-root@k8s-master: ~$ sudo chown $(id -u):$(id -g) $HOME/.kube/config
-```
+k8s install
 
-Verify that it is operating correctly.
+sudo apt-get update
+# apt-transport-https may be a dummy package; if so, you can skip that package
+sudo apt-get install -y apt-transport-https ca-certificates curl gpg
 
-```bash
-root@k8s-master: ~$ kubectl get nodes
-```
+# If the directory `/etc/apt/keyrings` does not exist, it should be created before the curl command, read the note below.
+# sudo mkdir -p -m 755 /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
-Next, Installing a Pod network add-on.
+# This overwrites any existing configuration in /etc/apt/sources.list.d/kubernetes.list
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
 
-```bash
-root@k8s-master: ~$ kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.25.0/manifests/calico.yaml
-```
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
 
-And the next step is to join the nodes.
+sudo systemctl enable --now kubelet
 
-From now on, commands are typed to worker nodes [`k8s-node1`,`k8s-node2`,`k8s-node3`].
-
-```bash
-root@k8s-node1: ~$ kubeadm join [YOUR TOKEN]
-
-root@k8s-node2: ~$ kubeadm join [YOUR TOKEN]
-
-root@k8s-node3: ~$ kubeadm join [YOUR TOKEN]
-```
-
-Check your cluster!
-
-```bash
-root@k8s-master: ~$ kubectl get nodes
-```
-
-If all nodes are output and ready, it is a success!
+권한 부여
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
 
 <a name='vm_spec'></a>
 
